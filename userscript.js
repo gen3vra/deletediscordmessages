@@ -2,7 +2,7 @@
 // @name          Discord Mass Deleter
 // @description   Extends the discord interface so you can mass delete messages from discord. Improved all aspects such as timing, backoffs, bugs, etc. Original created by victornpb.
 // @namespace     https://github.com/gen3vra/deletediscordmessages
-// @version       1.1.0
+// @version       1.2.0
 // @match         https://discord.com/*
 // @grant         none
 // @license       MIT
@@ -112,9 +112,8 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 throttledCount++;
                 throttledTotalTime += w;
                 searchDelay = w * 1.1; // set delay
-                log.warn(`Discord said don't search for ${w}ms! Waiting ${searchDelay} to allow cooldown...`);
+                log.warn(`Discord said don't search for ${w}ms!`);
                 printDelayStats();
-                log.verb(`Cooling down for ${w * 2}ms before retrying...`);
 
                 //this seems like a bug in the original script
                 //await wait(w * 2);
@@ -203,15 +202,14 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                             deleteDelay = w * multi;
                         else {
                             // we would get caught in a loop
-                            deleteDelay = deleteDelay / 4;
+                            deleteDelay = deleteDelay * 0.90;
                             if (deleteDelay < w)
                                 deleteDelay = w * multi;
-                            log.warn("Delete delay already greater than wait time, setting to reduced.");
+                            log.warn("Delete delay is already greater than wait time. Reduce instead.");
                         }
 
-                        log.warn(`Discord said don't delete for ${w}ms! Waiting ${deleteDelay}ms to allow cooldown.`);
+                        log.warn(`Discord said don't delete for ${w}ms!`);
                         printDelayStats();
-                        log.verb(`Cooling down for ${w}ms before retrying...`);
 
                         await wait(deleteDelay);
                         i--; // retry
@@ -230,11 +228,11 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     // make sure we eventually speed back up
                     if (successInRow > 4 && deleteDelay > deleteDefault) {
                         deleteDelay = deleteDelay * 0.9;
-                        log.verb(`Speeding up slightly to ${deleteDelay}`);
+                        log.verb(`Lowering delay to ${deleteDelay}ms`);
                     }
                     else if (deleteDelay < deleteDefault) {
                         deleteDefault = deleteDefault;
-                        log.verb("Back at default speed.");
+                        log.verb(`Back at default delay, ${deleteDefault}.`);
                     }
                 }
 
@@ -283,7 +281,7 @@ let popover;
 let btn;
 let stop;
 let logArea;
-let version = "1.1.0";
+let version = "1.2.0";
 
 function initUI() {
 
@@ -322,7 +320,7 @@ function initUI() {
     popover = createElm(`
     <div id="undiscord" style="display:none;">
         <div class="header">
-            🌹 Discord Deleter ${version}
+            🌹 Discord Mass Deleter ${version}
         </div>
         <div class="form">
             <div style="display:flex;flex-wrap:wrap;">
