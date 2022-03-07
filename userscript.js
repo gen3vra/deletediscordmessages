@@ -26,7 +26,8 @@
  */
 async function deleteMessages(authToken, authorId, guildId, channelId, minId, maxId, content, hasLink, hasFile, includeNsfw, includePinned, extLogger, stopHndl, onProgress) {
     const start = new Date();
-    let deleteDelay = 850;
+    let deleteDefault = 850;
+    let deleteDelay = deleteDefault;
     let searchDelay = 100;
     let delCount = 0;
     let failCount = 0;
@@ -37,6 +38,9 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
     let throttledTotalTime = 0;
     let offset = 0;
     let iterations = -1;
+
+    let failInRow = 0;
+    let successInRow = 0;
 
     const wait = async ms => new Promise(done => setTimeout(done, ms));
     const msToHMS = s => `${s / 3.6e6 | 0}h ${(s % 3.6e6) / 6e4 | 0}m ${(s % 6e4) / 1000 | 0}s`;
@@ -157,9 +161,12 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 const message = messagesToDelete[i];
                 if (stopHndl && stopHndl() === false) return end(log.error('Stopped by you!'));
 
-                log.debug(`${((delCount + 1) / grandTotal * 100).toFixed(2)}% (${delCount + 1}/${grandTotal})`,
-                    `Deleting ID:${redact(message.id)} <b>${redact(message.author.username + '#' + message.author.discriminator)} <small>(${redact(new Date(message.timestamp).toLocaleString())})</small>:</b> <i>${redact(message.content).replace(/\n/g, '↵')}</i>`,
-                    message.attachments.length ? redact(JSON.stringify(message.attachments)) : '');
+                // Too big to read, too much information to be useful to end user
+                // if you care about individual IDs being deleted or your username, there ya go:
+                //log.debug(`${((delCount + 1) / grandTotal * 100).toFixed(2)}% (${delCount + 1}/${grandTotal})` + `Delete ID:${redact(message.id)} <b>${redact(message.author.username + '#' + message.author.discriminator)} <small>(${redact(new Date(message.timestamp).toLocaleString())})</small>:</b> <i>${redact(message.content).replace(/\n/g, '↵')}</i>`, message.attachments.length ? redact(JSON.stringify(message.attachments)) : '');
+                log.debug(`| ${((delCount + 1) / grandTotal * 100).toFixed(2)}% (${delCount + 1}/${grandTotal})` + ` | <b>DEL</b> <small>(${redact(new Date(message.timestamp).toLocaleDateString() + " - " + new Date(message.timestamp).toLocaleTimeString())})</small>: ${redact(message.content).replace(/\n/g, '↵')}`, message.attachments.length ? redact(JSON.stringify(message.attachments)) : '');
+
+
                 if (onProgress) onProgress(delCount + 1, grandTotal);
 
                 let resp;
@@ -180,16 +187,25 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 }
 
                 if (!resp.ok) {
+                    // failed
+                    failInRow++;
+                    successInRow = 0;
+
                     // deleting messages too fast
                     if (resp.status === 429) {
                         const w = (await resp.json()).retry_after;
                         throttledCount++;
                         throttledTotalTime += w;
+
+                        var multi = 1.2;
                         //increase delay if deleteDelay is less
                         if (w * 1.1 > deleteDelay)
-                            deleteDelay = w * 1.1;
+                            deleteDelay = w * multi;
                         else {
-                            deleteDelay = w * 2;
+                            // we would get caught in a loop
+                            deleteDelay = deleteDelay / 4;
+                            if (deleteDelay < w)
+                                deleteDelay = w * multi;
                             log.warn("Delete delay already greater than wait time, setting to reduced.");
                         }
 
@@ -205,6 +221,22 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                         failCount++;
                     }
                 }
+                // response was okay, let's check backoff
+                else {
+                    // success
+                    failInRow = 0;
+                    successInRow++;
+
+                    // make sure we eventually speed back up
+                    if (successInRow > 4 && deleteDelay > deleteDefault) {
+                        deleteDelay = deleteDelay * 0.9;
+                        log.verb(`Speeding up slightly to ${deleteDelay}`);
+                    }
+                    else if (deleteDelay < deleteDefault) {
+                        deleteDefault = deleteDefault;
+                        log.verb("Back at default speed.");
+                    }
+                }
 
                 await wait(deleteDelay);
             }
@@ -217,7 +249,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
 
             log.verb(`Searching next messages in ${searchDelay}ms...`, (offset ? `(offset: ${offset})` : ''));
             // rs
-            deleteDelay = 850;
+            deleteDelay = deleteDefault;
             searchDelay = 100;
 
             await wait(searchDelay);
@@ -284,7 +316,8 @@ function initUI() {
         #undiscord .header{padding:12px 16px;background-color:var(--background-tertiary);color:var(--text-muted)}
         #undiscord .form{padding:8px;background:var(--background-secondary);box-shadow:0 1px 0 rgba(0,0,0,.2),0 1.5px 0 rgba(0,0,0,.05),0 2px 0 rgba(0,0,0,.05)}
         #undiscord .logarea{overflow:auto;font-size:.75rem;font-family:Consolas,Liberation Mono,Menlo,Courier,monospace;flex-grow:1;padding:10px}
-    `);
+        .logarea { scrollbar-width: none;}
+        `);
 
     popover = createElm(`
     <div id="undiscord" style="display:none;">
