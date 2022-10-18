@@ -26,7 +26,7 @@
  */
 async function deleteMessages(authToken, authorId, guildId, channelId, minId, maxId, content, hasLink, hasFile, includeNsfw, includePinned, extLogger, stopHndl, onProgress) {
     const start = new Date();
-    let deleteDefault = 850;
+    let deleteDefault = Math.floor(Math.random() * (2000 - 859 + 1) + 859);
     let deleteDelay = deleteDefault;
     let searchDelay = 100;
     let delCount = 0;
@@ -224,7 +224,6 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     // success
                     failInRow = 0;
                     successInRow++;
-
                     // make sure we eventually speed back up
                     if (successInRow > 4 && deleteDelay > deleteDefault) {
                         deleteDelay = deleteDelay * 0.9;
@@ -248,7 +247,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
             log.verb(`Searching next messages in ${searchDelay}ms...`, (offset ? `(offset: ${offset})` : ''));
             // rs
             deleteDelay = deleteDefault;
-            searchDelay = 100;
+            searchDelay = Math.floor(Math.random() * (500 - 100 + 1) + 100);
 
             await wait(searchDelay);
             logArea.innerHTML = '';
