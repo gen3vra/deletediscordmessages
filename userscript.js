@@ -26,9 +26,10 @@
  */
 async function deleteMessages(authToken, authorId, guildId, channelId, minId, maxId, content, hasLink, hasFile, includeNsfw, includePinned, extLogger, stopHndl, onProgress) {
     const start = new Date();
-    let deleteDefault = Math.floor(Math.random() * (2000 - 859 + 1) + 859);
+    let deleteDefault = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
     let deleteDelay = deleteDefault;
-    let searchDelay = 100;
+    let randomizeDelay = true;
+    let searchDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
     let delCount = 0;
     let failCount = 0;
     let avgPing;
@@ -189,6 +190,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     // failed
                     failInRow++;
                     successInRow = 0;
+                    randomizeDelay = false;
 
                     // deleting messages too fast
                     if (resp.status === 429) {
@@ -196,19 +198,19 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                         throttledCount++;
                         throttledTotalTime += w;
 
-                        var multi = 1.2;
+                        var multi = 1.632;
                         //increase delay if deleteDelay is less
-                        if (w * 1.1 > deleteDelay)
+                        if (w * 1.532 > deleteDelay)
                             deleteDelay = w * multi;
                         else {
                             // we would get caught in a loop
-                            deleteDelay = deleteDelay * 0.90;
+                            deleteDelay = deleteDelay * 0.94812;
                             if (deleteDelay < w)
                                 deleteDelay = w * multi;
                             log.warn("Delete delay is already greater than wait time. Reduce instead.");
                         }
 
-                        log.warn(`Discord said don't delete for ${w}ms!`);
+                        log.warn(`Failed to delete - Discord said go away for ${w}ms!`);
                         printDelayStats();
 
                         await wait(deleteDelay);
@@ -224,16 +226,23 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     // success
                     failInRow = 0;
                     successInRow++;
+                    if (randomizeDelay) {
+                        deleteDefault = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
+                        deleteDelay = deleteDefault;
+                    }
                     // make sure we eventually speed back up
-                    if (successInRow > 4 && deleteDelay > deleteDefault) {
-                        deleteDelay = deleteDelay * 0.9;
+                    if (successInRow > 4 && deleteDelay > deleteDefault && !randomizeDelay) {
+                        deleteDelay = deleteDelay * 0.94812;
                         log.verb(`Lowering delay to ${deleteDelay}ms`);
                     }
                     else if (deleteDelay < deleteDefault) {
-                        deleteDefault = deleteDefault;
-                        log.verb(`Back at default delay, ${deleteDefault}.`);
+                        deleteDefault = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
+                        deleteDelay = deleteDefault;
+                        randomizeDelay = true;
+                        log.verb(`Default delay, ${deleteDefault}.`);
                     }
                 }
+
 
                 await wait(deleteDelay);
             }
@@ -246,13 +255,16 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
 
             log.verb(`Searching next messages in ${searchDelay}ms...`, (offset ? `(offset: ${offset})` : ''));
             // rs
+            deleteDefault = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
             deleteDelay = deleteDefault;
-            searchDelay = Math.floor(Math.random() * (500 - 100 + 1) + 100);
+            searchDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
+            // Turn back on randomize since we are searching next page anyway
+            randomizeDelay = true;
 
             await wait(searchDelay);
             logArea.innerHTML = '';
 
-            if (stopHndl && stopHndl() === false) return end(log.error('Stopped by you!'));
+            if (stopHndl && stopHndl() === false) return end(log.error('Cancelled by you!'));
 
             return await recurse();
         } else {
@@ -509,6 +521,3 @@ function initUI() {
 }
 
 initUI();
-
-
-//END.
