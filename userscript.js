@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name          Discord Mass Deleter
+// @name          Discord Mass Deleter (Fixed)
 // @description   Extends the discord interface so you can mass delete messages from discord. Improved all aspects such as timing, backoffs, bugs, etc. Original created by victornpb.
 // @namespace     https://github.com/gen3vra/deletediscordmessages
 // @version       1.2.0
@@ -338,7 +338,7 @@ function initUI() {
                 <span>Authorization <a
                         href="https://github.com/victornpb/deleteDiscordMessages/blob/master/help/authToken.md" title="Help"
                         target="_blank">?</a> <button id="getToken">get</button><br>
-                    <input type="password" id="authToken" placeholder="Auth Token" autofocus>*<br>
+                    <input type="password" id="authToken" placeholder="Auth Token" autocomplete="off" autofocus>*<br>
                     <span>Author <a href="https://github.com/victornpb/deleteDiscordMessages/blob/master/help/authorId.md"
                             title="Help" target="_blank">?</a> <button id="getAuthor">get</button></span>
                     <br><input id="authorId" type="text" placeholder="Author ID" priv></span>
@@ -411,9 +411,46 @@ function initUI() {
 
             window.dispatchEvent(new Event('beforeunload'));
             const ls = document.body.appendChild(document.createElement('iframe')).contentWindow.localStorage;
-            $('input#authToken').value = JSON.parse(localStorage.token);
 
-            $('input#authorId').value = JSON.parse(localStorage.user_id_cache);
+            webpackChunkdiscord_app.push([
+                [Math.random()],
+                {},
+                (r) => {
+                    for (let m of Object.keys(r.c)) {
+                        try {
+                            let mod = r.c[m].exports;
+                            if (mod && typeof mod === 'object') {
+                                for (let fn of Object.keys(mod)) {
+                                    if (fn === 'default' && mod[fn]?.getToken) {
+                                        $('input#authToken').value = mod[fn].getToken();
+                                        return;
+                                    }
+                                }
+                            }
+                        } catch {}
+                    }
+                }
+            ]);
+
+            webpackChunkdiscord_app.push([
+                [Math.random()],
+                {},
+                (r) => {
+                    for (const m of Object.keys(r.c)) {
+                        try {
+                            const mod = r.c[m].exports;
+                            if (mod?.default?.getUsers || mod?.getUsers) {
+                                const users = (mod.default || mod).getUsers();
+                                const user = Object.values(users).find(u => u.email);
+                                if (user) {
+                                    $('input#authorId').value = user.id;
+                                    return;
+                                }
+                            }
+                        } catch {}
+                    }
+                }
+            ]);
 
         };
     }
@@ -491,12 +528,52 @@ function initUI() {
     stopBtn.onclick = e => stop = stopBtn.disabled = !(startBtn.disabled = false);
     $('button#clear').onclick = e => {logArea.innerHTML = '';};
     $('button#getToken').onclick = e => {
-        window.dispatchEvent(new Event('beforeunload'));
-        const ls = document.body.appendChild(document.createElement('iframe')).contentWindow.localStorage;
-        $('input#authToken').value = JSON.parse(localStorage.token);
+        //window.dispatchEvent(new Event('beforeunload'));
+        //const ls = document.body.appendChild(document.createElement('iframe')).contentWindow.localStorage;
+        let token;
+        webpackChunkdiscord_app.push([
+            [Math.random()],
+            {},
+            (r) => {
+                for (let m of Object.keys(r.c)) {
+                    try {
+                        let mod = r.c[m].exports;
+                        if (mod && typeof mod === 'object') {
+                            for (let fn of Object.keys(mod)) {
+                                if (fn === 'default' && mod[fn]?.getToken) {
+                                    token = mod[fn].getToken();
+                                    return;
+                                }
+                            }
+                        }
+                    } catch {}
+                }
+            }
+        ]);
+        $('input#authToken').value = token;
     };
     $('button#getAuthor').onclick = e => {
-        $('input#authorId').value = JSON.parse(localStorage.user_id_cache);
+        let userId;
+        webpackChunkdiscord_app.push([
+            [Math.random()],
+            {},
+            (r) => {
+                for (const m of Object.keys(r.c)) {
+                    try {
+                        const mod = r.c[m].exports;
+                        if (mod?.default?.getUsers || mod?.getUsers) {
+                            const users = (mod.default || mod).getUsers();
+                            const user = Object.values(users).find(u => u.email);
+                            if (user) {
+                                userId = user.id;
+                                return;
+                            }
+                        }
+                    } catch {}
+                }
+            }
+        ]);
+        $('input#authorId').value = userId;
     };
     $('button#getGuildAndChannel').onclick = e => {
         //TODO: function?
