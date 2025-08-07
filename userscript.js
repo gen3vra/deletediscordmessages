@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name          Discord Mass Deleter (Fixed)
+// @name          Discord Mass Deleter
 // @description   Extends the discord interface so you can mass delete messages from discord. Improved all aspects such as timing, backoffs, bugs, etc. Original created by victornpb.
 // @namespace     https://github.com/gen3vra/deletediscordmessages
-// @version       1.2.0
+// @version       1.3.0
 // @match         https://discord.com/*
 // @grant         none
 // @license       MIT
@@ -311,7 +311,7 @@ function initUI() {
 
     insertCss(`
         #undicord-btn{position: relative; height: 24px;width: auto;-webkit-box-flex: 0;-ms-flex: 0 0 auto;flex: 0 0 auto;margin: 0 8px;cursor:pointer; color: var(--interactive-normal);}
-        #undiscord{position:fixed;top:100px;right:10px;bottom:10px;width:780px;z-index:99;color:var(--text-normal);background-color:var(--background-secondary);box-shadow:var(--elevation-stroke),var(--elevation-high);border-radius:4px;display:flex;flex-direction:column}
+        #undiscord{position:fixed;top:100px;right:10px;bottom:10px;width:780px;z-index:99;color:lightgrey;background-color:black;box-shadow:var(--elevation-stroke),var(--elevation-high);border-radius:4px;display:flex;flex-direction:column}
         #undiscord a{color:#00b0f4}
         #undiscord.redact .priv{display:none!important}
         #undiscord:not(.redact) .mask{display:none!important}
@@ -411,26 +411,9 @@ function initUI() {
 
             window.dispatchEvent(new Event('beforeunload'));
             const ls = document.body.appendChild(document.createElement('iframe')).contentWindow.localStorage;
-
-            webpackChunkdiscord_app.push([
-                [Math.random()],
-                {},
-                (r) => {
-                    for (let m of Object.keys(r.c)) {
-                        try {
-                            let mod = r.c[m].exports;
-                            if (mod && typeof mod === 'object') {
-                                for (let fn of Object.keys(mod)) {
-                                    if (fn === 'default' && mod[fn]?.getToken) {
-                                        $('input#authToken').value = mod[fn].getToken();
-                                        return;
-                                    }
-                                }
-                            }
-                        } catch {}
-                    }
-                }
-            ]);
+            const iframe = document.createElement('iframe');
+            $('input#authToken').value = JSON.parse(document.body.appendChild(iframe).contentWindow.localStorage.token)
+            iframe.remove();
 
             webpackChunkdiscord_app.push([
                 [Math.random()],
@@ -531,25 +514,9 @@ function initUI() {
         //window.dispatchEvent(new Event('beforeunload'));
         //const ls = document.body.appendChild(document.createElement('iframe')).contentWindow.localStorage;
         let token;
-        webpackChunkdiscord_app.push([
-            [Math.random()],
-            {},
-            (r) => {
-                for (let m of Object.keys(r.c)) {
-                    try {
-                        let mod = r.c[m].exports;
-                        if (mod && typeof mod === 'object') {
-                            for (let fn of Object.keys(mod)) {
-                                if (fn === 'default' && mod[fn]?.getToken) {
-                                    token = mod[fn].getToken();
-                                    return;
-                                }
-                            }
-                        }
-                    } catch {}
-                }
-            }
-        ]);
+        const iframe = document.createElement('iframe');
+        token = JSON.parse(document.body.appendChild(iframe).contentWindow.localStorage.token)
+        iframe.remove();
         $('input#authToken').value = token;
     };
     $('button#getAuthor').onclick = e => {
