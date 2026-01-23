@@ -439,7 +439,7 @@ function initUI() {
     }
 
     function mountBtn() {
-        const toolbar = document.querySelector('[class^=toolbar]');
+        const toolbar = document.querySelector('[class*="toolbar"]');
         if (toolbar) toolbar.appendChild(btn);
     }
 
