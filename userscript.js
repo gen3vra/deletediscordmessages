@@ -39,13 +39,14 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
     let throttledTotalTime = 0;
     let offset = 0;
     let iterations = -1;
+    let ended = false;
 
     let failInRow = 0;
     let successInRow = 0;
 
     const wait = async ms => new Promise(done => setTimeout(done, ms));
     const msToHMS = s => `${s / 3.6e6 | 0}h ${(s % 3.6e6) / 6e4 | 0}m ${(s % 6e4) / 1000 | 0}s`;
-    const escapeHTML = html => html.replace(/[&<"']/g, m => ({'&': '&amp;', '<': '&lt;', '"': '&quot;', '\'': '&#039;'})[m]);
+    const escapeHTML = html => html.replace(/[&<"']/g, m => ({ '&': '&amp;', '<': '&lt;', '"': '&quot;', '\'': '&#039;' })[m]);
     const redact = str => `<span class="priv">${escapeHTML(str)}</span><span class="mask">REDACTED</span>`;
     const queryString = params => params.filter(p => p[1] !== undefined).map(p => p[0] + '=' + encodeURIComponent(p[1])).join('&');
     const ask = async msg => new Promise(resolve => setTimeout(() => resolve(window.confirm(msg)), 10));
@@ -53,12 +54,12 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
     const toSnowflake = (date) => /:/.test(date) ? ((new Date(date).getTime() - 1420070400000) * Math.pow(2, 22)) : date;
 
     const log = {
-        debug() {extLogger ? extLogger('debug', arguments) : console.debug.apply(console, arguments);},
-        info() {extLogger ? extLogger('info', arguments) : console.info.apply(console, arguments);},
-        verb() {extLogger ? extLogger('verb', arguments) : console.log.apply(console, arguments);},
-        warn() {extLogger ? extLogger('warn', arguments) : console.warn.apply(console, arguments);},
-        error() {extLogger ? extLogger('error', arguments) : console.error.apply(console, arguments);},
-        success() {extLogger ? extLogger('success', arguments) : console.info.apply(console, arguments);},
+        debug() { extLogger ? extLogger('debug', arguments) : console.debug.apply(console, arguments); },
+        info() { extLogger ? extLogger('info', arguments) : console.info.apply(console, arguments); },
+        verb() { extLogger ? extLogger('verb', arguments) : console.log.apply(console, arguments); },
+        warn() { extLogger ? extLogger('warn', arguments) : console.warn.apply(console, arguments); },
+        error() { extLogger ? extLogger('error', arguments) : console.error.apply(console, arguments); },
+        success() { extLogger ? extLogger('success', arguments) : console.info.apply(console, arguments); },
     };
 
     async function recurse() {
@@ -89,7 +90,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 ['has', hasFile ? 'file' : undefined],
                 ['content', content || undefined],
                 ['include_nsfw', includeNsfw ? true : undefined],
-            ]), {headers});
+            ]), { headers });
             lastPing = (Date.now() - s);
             avgPing = avgPing > 0 ? (avgPing * 0.9) + (lastPing * 0.1) : lastPing;
         } catch (err) {
@@ -135,10 +136,13 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
         const skippedMessages = discoveredMessages.filter(msg => !messagesToDelete.find(m => m.id === msg.id));
 
         const end = () => {
+            if (ended)
+                return;
             log.success(`Ended at ${new Date().toLocaleString()}! Total time: ${msToHMS(Date.now() - start.getTime())}`);
             printDelayStats();
             log.verb(`Rate Limited: ${throttledCount} times. Total time throttled: ${msToHMS(throttledTotalTime)}.`);
             log.debug(`Deleted ${delCount} messages, ${failCount} failed.\n`);
+            ended = true;
         }
 
         const etr = msToHMS((searchDelay * Math.round(total / 25)) + ((deleteDelay + avgPing) * total));
@@ -164,7 +168,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 // Too big to read, too much information to be useful to end user
                 // if you care about individual IDs being deleted or your username, there ya go:
                 //log.debug(`${((delCount + 1) / grandTotal * 100).toFixed(2)}% (${delCount + 1}/${grandTotal})` + `Delete ID:${redact(message.id)} <b>${redact(message.author.username + '#' + message.author.discriminator)} <small>(${redact(new Date(message.timestamp).toLocaleString())})</small>:</b> <i>${redact(message.content).replace(/\n/g, '↵')}</i>`, message.attachments.length ? redact(JSON.stringify(message.attachments)) : '');
-                log.debug(`| ${((delCount + 1) / grandTotal * 100).toFixed(2)}% (${delCount + 1}/${grandTotal})` + ` | <b>DEL</b> <small>(${redact(new Date(message.timestamp).toLocaleDateString() + " - " + new Date(message.timestamp).toLocaleTimeString())})</small>: ${redact(message.content).replace(/\n/g, '↵')}`, message.attachments.length ? redact(JSON.stringify(message.attachments)) : '');
+                log.debug(`${((delCount + 1) / grandTotal * 100).toFixed(2)}% (${delCount + 1}/${grandTotal})` + ` | <b>DEL</b> <small>(${redact(new Date(message.timestamp).toLocaleDateString() + " - " + new Date(message.timestamp).toLocaleTimeString())})</small>: ${redact(message.content).replace(/\n/g, '↵')}`, message.attachments.length ? redact(JSON.stringify(message.attachments)) : '');
 
 
                 if (onProgress) onProgress(delCount + 1, grandTotal);
@@ -195,6 +199,8 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     // deleting messages too fast
                     if (resp.status === 429) {
                         const w = (await resp.json()).retry_after;
+                        log.warn(`Failed to delete - Discord said go away for ${w}ms!`);
+
                         throttledCount++;
                         throttledTotalTime += w;
 
@@ -210,7 +216,6 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                             log.warn("Delete delay is already greater than wait time. Reduce instead.");
                         }
 
-                        log.warn(`Failed to delete - Discord said go away for ${w}ms!`);
                         printDelayStats();
 
                         await wait(deleteDelay);
@@ -221,7 +226,6 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                         failCount++;
                     }
                 }
-                // response was okay, let's check backoff
                 else {
                     // success
                     failInRow = 0;
@@ -248,9 +252,9 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
             }
 
             if (skippedMessages.length > 0) {
-                grandTotal -= skippedMessages.length;
+                /*grandTotal -= skippedMessages.length;*/
                 offset += skippedMessages.length;
-                log.verb(`Found ${skippedMessages.length} system messages! Decreasing grandTotal to ${grandTotal} and increasing offset to ${offset}.`);
+                log.verb(`Found ${skippedMessages.length} system messages! Increasing offset to ${offset}.`);
             }
 
             log.verb(`Searching next messages in ${searchDelay}ms...`, (offset ? `(offset: ${offset})` : ''));
@@ -269,12 +273,12 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
             return await recurse();
         } else {
             if (total - offset > 0) {
-                log.warn('API returned an empty page, but total is greater than 0 still. Searching next page.');
+                log.warn('API returned an empty page. Searching next page.');
                 offset += 25;
                 await recurse();
                 return end();
             } else {
-                log.warn("(Total - offset) isn't greater than 0, ending.");
+                log.warn("(Total - offset) < 0, ending.");
                 return end();
             }
         }
@@ -282,6 +286,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
 
     log.success(`\nStarted at ${start.toLocaleString()}`);
     log.debug(`authorId="${redact(authorId)}" guildId="${redact(guildId)}" channelId="${redact(channelId)}" minId="${redact(minId)}" maxId="${redact(maxId)}" hasLink=${!!hasLink} hasFile=${!!hasFile}`);
+    ended = false;
     if (onProgress) onProgress(null, 1);
     return await recurse();
 }
@@ -292,7 +297,7 @@ let popover;
 let btn;
 let stop;
 let logArea;
-let version = "1.2.0";
+let version = "1.2.1";
 
 function initUI() {
 
@@ -430,7 +435,7 @@ function initUI() {
                                     return;
                                 }
                             }
-                        } catch {}
+                        } catch { }
                     }
                 }
             ]);
@@ -440,13 +445,14 @@ function initUI() {
 
     function mountBtn() {
         const toolbar = document.querySelector('[class*="toolbar"]');
-        if (toolbar) toolbar.appendChild(btn);
+        if (toolbar)
+            toolbar.appendChild(btn);
     }
 
     const observer = new MutationObserver(function (_mutationsList, _observer) {
         if (!document.body.contains(btn)) mountBtn(); // re-mount the button to the toolbar
     });
-    observer.observe(document.body, {attributes: false, childList: true, subtree: true});
+    observer.observe(document.body, { attributes: false, childList: true, subtree: true });
 
     mountBtn();
 
@@ -509,7 +515,7 @@ function initUI() {
         }
     };
     stopBtn.onclick = e => stop = stopBtn.disabled = !(startBtn.disabled = false);
-    $('button#clear').onclick = e => {logArea.innerHTML = '';};
+    $('button#clear').onclick = e => { logArea.innerHTML = ''; };
     $('button#getToken').onclick = e => {
         //window.dispatchEvent(new Event('beforeunload'));
         //const ls = document.body.appendChild(document.createElement('iframe')).contentWindow.localStorage;
@@ -536,7 +542,7 @@ function initUI() {
                                 return;
                             }
                         }
-                    } catch {}
+                    } catch { }
                 }
             }
         ]);
@@ -554,7 +560,7 @@ function initUI() {
     };
 
     const logger = (type = '', args) => {
-        const style = {'': '', info: 'color:#00b0f4;', verb: 'color:#72767d;', warn: 'color:#faa61a;', error: 'color:#f04747;', success: 'color:#43b581;'}[type];
+        const style = { '': '', info: 'color:#00b0f4;', verb: 'color:#72767d;', warn: 'color:#faa61a;', error: 'color:#f04747;', success: 'color:#43b581;' }[type];
         logArea.insertAdjacentHTML('beforeend', `<div style="${style}">${Array.from(args).map(o => typeof o === 'object' ? JSON.stringify(o, o instanceof Error && Object.getOwnPropertyNames(o)) : o).join('\t')}</div>`);
         if (autoScroll.checked) logArea.querySelector('div:last-child').scrollIntoView(false);
     };
