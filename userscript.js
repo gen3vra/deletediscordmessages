@@ -183,7 +183,6 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     });
                     lastPing = (Date.now() - s);
                     avgPing = (avgPing * 0.9) + (lastPing * 0.1);
-                    delCount++;
                 } catch (err) {
                     log.error('Delete request throwed an error:', err);
                     log.verb('Related object:', redact(JSON.stringify(message)));
@@ -230,6 +229,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     // success
                     failInRow = 0;
                     successInRow++;
+                    delCount++;
                     if (randomizeDelay) {
                         deleteDefault = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
                         deleteDelay = deleteDefault;
