@@ -164,7 +164,8 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
             if (ended)
                 return;
             log.success(`Ended at ${new Date().toLocaleString()}! Total time: ${msToHMS(Date.now() - start.getTime())}`);
-            printDelayStats();
+            // unnecessary
+            // printDelayStats();
             log.verb(`Rate Limited: ${throttledCount} times. Total time throttled: ${msToHMS(throttledTotalTime)}.`);
             const computedSkip = grandTotal - delCount - failCount;
             // archivedSkipCount retained for diagnostics, but not shown to user
