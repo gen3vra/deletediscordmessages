@@ -641,7 +641,23 @@ function initUI() {
         }
     };
     stopBtn.onclick = e => stop = stopBtn.disabled = !(startBtn.disabled = false);
-    $('button#clear').onclick = e => { logArea.innerHTML = ''; };
+    $('button#clear').onclick = e => {
+        logArea.innerHTML = '';
+
+        const progress = $('#progress');
+        const progress2 = btn.querySelector('progress');
+        const percent = $('.percent');
+
+        progress.style.display = 'none';
+        progress2.style.display = 'none';
+        progress.removeAttribute('max');
+        progress2.removeAttribute('max');
+        progress.value = 0;
+        progress2.value = 0;
+        progress.style.accentColor = '';
+        progress2.style.accentColor = '';
+        percent.textContent = '';
+    };
     $('button#getToken').onclick = e => {
         //window.dispatchEvent(new Event('beforeunload'));
         //const ls = document.body.appendChild(document.createElement('iframe')).contentWindow.localStorage;
