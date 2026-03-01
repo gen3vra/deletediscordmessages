@@ -190,8 +190,9 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
 
             if (++iterations < 1) {
                 log.verb(`Waiting for your confirmation...`);
+                const previewMessages = [...messagesToDelete].reverse();
                 if (!await ask(`Do you want to delete ~${total} messages?\nEstimated time: ${etr}\n\n---- Preview ----\n` +
-                    messagesToDelete.map(m => `${m.author.username}#${m.author.discriminator}: ${m.attachments.length ? '[ATTACHMENTS]' : m.content}`).join('\n')))
+                    previewMessages.map(m => `${m.author.username}#${m.author.discriminator}: ${m.attachments.length ? '[ATTACHMENTS]' : m.content}`).join('\n')))
                     return end(log.error('Aborted by you!'));
                 log.verb(`OK`);
             }
