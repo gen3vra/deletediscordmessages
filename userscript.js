@@ -26,11 +26,18 @@
  */
 async function deleteMessages(authToken, authorId, guildId, channelId, minId, maxId, content, hasLink, hasFile, includeNsfw, includePinned, extLogger, stopHndl, onProgress) {
     const start = new Date();
+    // keep track of channels (threads) that have been archived so we stop
+    // attempting further deletes against them; the search API may still
+    // return hits for messages in an archived thread, but every delete will
+    // fail and we risk infinite retry loops or excessive rate-limiting.
+    const ArchivedThreads = new Set();
     let deleteDefault = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
     let deleteDelay = deleteDefault;
     let randomizeDelay = true;
     let searchDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
     let delCount = 0;
+    let skipCount = 0;            // messages we could not delete (system/archive)
+    let archivedSkipCount = 0;    // subset of skipCount belonging to archived threads
     let failCount = 0;
     let avgPing;
     let lastPing;
@@ -130,23 +137,52 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
         const total = data.total_results;
         if (!grandTotal) grandTotal = total;
         const discoveredMessages = data.messages.map(convo => convo.find(message => message.hit === true));
-        const messagesToDelete = discoveredMessages.filter(msg => {
+        // Filter out system messages and optionally pinned ones
+        let messagesToDelete = discoveredMessages.filter(msg => {
             return msg.type === 0 || msg.type === 6 || (msg.pinned && includePinned);
         });
+        // remove any messages belonging to threads we've already marked archived
+        messagesToDelete = messagesToDelete.filter(msg => {
+            if (ArchivedThreads.has(msg.channel_id)) {
+                log.verb(`Skipping message in archived thread ${msg.channel_id}`);
+                return false;
+            }
+            return true;
+        });
         const skippedMessages = discoveredMessages.filter(msg => !messagesToDelete.find(m => m.id === msg.id));
+        // update global counters
+        skipCount += skippedMessages.length;
+        const archivedCount = skippedMessages.filter(msg => ArchivedThreads.has(msg.channel_id)).length;
+        const systemCount = skippedMessages.length - archivedCount;
+        archivedSkipCount += archivedCount;
+        // signal progress UI that undeletable messages were found
+        if (skippedMessages.length > 0) {
+            try { if (onProgress) onProgress(delCount, grandTotal || 1, true); } catch (e) { }
+        }
 
         const end = () => {
             if (ended)
                 return;
             log.success(`Ended at ${new Date().toLocaleString()}! Total time: ${msToHMS(Date.now() - start.getTime())}`);
-            printDelayStats();
+            // unnecessary
+            // printDelayStats();
             log.verb(`Rate Limited: ${throttledCount} times. Total time throttled: ${msToHMS(throttledTotalTime)}.`);
-            log.debug(`Deleted ${delCount} messages, ${failCount} failed.\n`);
+            const computedSkip = grandTotal - delCount - failCount;
+            // archivedSkipCount retained for diagnostics, but not shown to user
+            log.debug(`Deleted ${delCount} messages, ${failCount} failed, ${computedSkip} skipped.\n`);
+            // update UI to show final deleted count vs deletable messages
+            // do not update UI here; the last onProgress from the loop already
+            // reflected the most recent state. calling onProgress at end caused
+            // spurious resets (blue/full) when the run ended incomplete.
             ended = true;
         }
 
-        const etr = msToHMS((searchDelay * Math.round(total / 25)) + ((deleteDelay + avgPing) * total));
-        log.info(`Total messages found: ${data.total_results}`, `(Messages in current page: ${data.messages.length}, To be deleted: ${messagesToDelete.length}, System: ${skippedMessages.length})`, `offset: ${offset}`);
+        const deletableMessages = grandTotal - archivedSkipCount;
+        const etr = msToHMS((searchDelay * Math.round(deletableMessages / 25)) + ((deleteDelay + avgPing) * deletableMessages));
+        // systemCount already computed above when updating counters
+        log.info(`Total messages found: ${data.total_results}`,
+            `(Hits: ${data.messages.length}, Delete: ${messagesToDelete.length}, Skipped: ${skippedMessages.length} (system ${systemCount}))`,
+            `offset: ${offset}`);
         printDelayStats();
         log.verb(`Estimated time remaining: ${etr}`)
 
@@ -155,23 +191,30 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
 
             if (++iterations < 1) {
                 log.verb(`Waiting for your confirmation...`);
+                const previewMessages = [...messagesToDelete].reverse();
                 if (!await ask(`Do you want to delete ~${total} messages?\nEstimated time: ${etr}\n\n---- Preview ----\n` +
-                    messagesToDelete.map(m => `${m.author.username}#${m.author.discriminator}: ${m.attachments.length ? '[ATTACHMENTS]' : m.content}`).join('\n')))
+                    previewMessages.map(m => `${m.author.username}#${m.author.discriminator}: ${m.attachments.length ? '[ATTACHMENTS]' : m.content}`).join('\n')))
                     return end(log.error('Aborted by you!'));
                 log.verb(`OK`);
             }
 
             for (let i = 0; i < messagesToDelete.length; i++) {
                 const message = messagesToDelete[i];
+                // if we've already marked this thread as archived, skip
+                if (ArchivedThreads.has(message.channel_id)) {
+                    log.verb(`Skipping message in archived thread ${message.channel_id}`);
+                    continue;
+                }
                 if (stopHndl && stopHndl() === false) return end(log.error('Stopped by you!'));
 
                 // Too big to read, too much information to be useful to end user
                 // if you care about individual IDs being deleted or your username, there ya go:
                 //log.debug(`${((delCount + 1) / grandTotal * 100).toFixed(2)}% (${delCount + 1}/${grandTotal})` + `Delete ID:${redact(message.id)} <b>${redact(message.author.username + '#' + message.author.discriminator)} <small>(${redact(new Date(message.timestamp).toLocaleString())})</small>:</b> <i>${redact(message.content).replace(/\n/g, '↵')}</i>`, message.attachments.length ? redact(JSON.stringify(message.attachments)) : '');
-                log.debug(`${((delCount + 1) / grandTotal * 100).toFixed(2)}% (${delCount + 1}/${grandTotal})` + ` | <b>DEL</b> <small>(${redact(new Date(message.timestamp).toLocaleDateString() + " - " + new Date(message.timestamp).toLocaleTimeString())})</small>: ${redact(message.content).replace(/\n/g, '↵')}`, message.attachments.length ? redact(JSON.stringify(message.attachments)) : '');
+                const processed = delCount + skipCount;
+                log.debug(`${((processed + 1) / grandTotal * 100).toFixed(2)}% (${processed + 1}/${grandTotal})` + ` | <b>DEL</b> <small>(${redact(new Date(message.timestamp).toLocaleDateString() + " - " + new Date(message.timestamp).toLocaleTimeString())})</small>: ${redact(message.content).replace(/\n/g, '↵')}`, message.attachments.length ? redact(JSON.stringify(message.attachments)) : '');
 
 
-                if (onProgress) onProgress(delCount + 1, grandTotal);
+                // progress reflects actual deleted messages (and adjusts when archived threads are detected)
 
                 let resp;
                 try {
@@ -183,7 +226,6 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     });
                     lastPing = (Date.now() - s);
                     avgPing = (avgPing * 0.9) + (lastPing * 0.1);
-                    delCount++;
                 } catch (err) {
                     log.error('Delete request throwed an error:', err);
                     log.verb('Related object:', redact(JSON.stringify(message)));
@@ -192,13 +234,28 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
 
                 if (!resp.ok) {
                     // failed
+                    let err;
+                    try { err = await resp.json(); } catch { err = null; }
+
                     failInRow++;
                     successInRow = 0;
                     randomizeDelay = false;
 
+                    // thread archived – API can return a few different codes or
+                    // messages depending on context.
+                    if ((resp.status === 400 && err?.code === 50083) ||
+                        (resp.status === 403 && err?.message && /archiv/i.test(err.message)) ||
+                        (resp.status === 404 && err?.message && /archiv/i.test(err.message))) {
+                        log.warn(`Archived thread detected (status ${resp.status}${err?.code ? ', code ' + err.code : ''}), marking channel ${message.channel_id} as archived`);
+                        ArchivedThreads.add(message.channel_id);
+                        // accounting/offset for this message is handled in the page-level
+                        // skippedMessages block to avoid double counting.
+                        continue;
+                    }
+
                     // deleting messages too fast
-                    if (resp.status === 429) {
-                        const w = (await resp.json()).retry_after;
+                    else if (resp.status === 429) {
+                        const w = err?.retry_after;
                         log.warn(`Failed to delete - Discord said go away for ${w}ms!`);
 
                         throttledCount++;
@@ -220,8 +277,9 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
 
                         await wait(deleteDelay);
                         i--; // retry
-                    } else {
-                        log.error(`Error deleting message, API responded with status ${resp.status}!`, await resp.json());
+                    }
+                    else {
+                        log.error(`Error deleting message, API responded with status ${resp.status}!`, err);
                         log.verb('Related object:', redact(JSON.stringify(message)));
                         failCount++;
                     }
@@ -230,6 +288,9 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     // success
                     failInRow = 0;
                     successInRow++;
+                    delCount++;
+                    // update progress after a successful delete
+                    try { if (onProgress) onProgress(delCount, grandTotal || 1); } catch (e) { }
                     if (randomizeDelay) {
                         deleteDefault = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
                         deleteDelay = deleteDefault;
@@ -248,13 +309,22 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 }
 
 
-                await wait(deleteDelay);
+                // avoid an unnecessary delay after processing the last message
+                if (i < messagesToDelete.length - 1) {
+                    await wait(deleteDelay);
+                }
             }
 
             if (skippedMessages.length > 0) {
                 /*grandTotal -= skippedMessages.length;*/
                 offset += skippedMessages.length;
                 log.verb(`Found ${skippedMessages.length} system messages! Increasing offset to ${offset}.`);
+            }
+
+            // All results are already accounted for (deleted/failed/skipped),
+            // no need to issue another search request.
+            if ((delCount + failCount + skipCount) >= grandTotal) {
+                return end();
             }
 
             log.verb(`Searching next messages in ${searchDelay}ms...`, (offset ? `(offset: ${offset})` : ''));
@@ -272,9 +342,27 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
 
             return await recurse();
         } else {
+            // nothing on this page could be deleted (either system or archived)
+            if (skippedMessages.length > 0) {
+                const archivedCount = skippedMessages.filter(msg => ArchivedThreads.has(msg.channel_id)).length;
+                const systemCount = skippedMessages.length - archivedCount;
+                log.verb(`No deletable messages on this page (${systemCount} system, ${archivedCount} archived). Advancing offset by ${skippedMessages.length}.`);
+                offset += skippedMessages.length;
+                if ((delCount + failCount + skipCount) >= grandTotal) {
+                    return end();
+                }
+                if (offset >= total) {
+                    return end();
+                }
+                log.verb(`Searching next messages in ${searchDelay}ms...`, `(offset: ${offset})`);
+                await wait(searchDelay);
+                return await recurse();
+            }
             if (total - offset > 0) {
                 log.warn('API returned an empty page. Searching next page.');
                 offset += 25;
+                log.verb(`Searching next messages in ${searchDelay}ms...`, `(offset: ${offset})`);
+                await wait(searchDelay);
                 await recurse();
                 return end();
             } else {
@@ -287,7 +375,8 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
     log.success(`\nStarted at ${start.toLocaleString()}`);
     log.debug(`authorId="${redact(authorId)}" guildId="${redact(guildId)}" channelId="${redact(channelId)}" minId="${redact(minId)}" maxId="${redact(maxId)}" hasLink=${!!hasLink} hasFile=${!!hasFile}`);
     ended = false;
-    if (onProgress) onProgress(null, 1);
+    // initialize progress at 0 so percent shows and color is blue immediately
+    try { if (onProgress) onProgress(0, 1); } catch (e) { }
     return await recurse();
 }
 
@@ -330,6 +419,13 @@ function initUI() {
         #undiscord .header{padding:12px 16px;background-color:var(--background-tertiary);color:var(--text-muted)}
         #undiscord .form{padding:8px;background:var(--background-secondary);box-shadow:0 1px 0 rgba(0,0,0,.2),0 1.5px 0 rgba(0,0,0,.05),0 2px 0 rgba(0,0,0,.05)}
         #undiscord .logarea{overflow:auto;font-size:.75rem;font-family:Consolas,Liberation Mono,Menlo,Courier,monospace;flex-grow:1;padding:10px}
+        #undiscord progress.complete { accent-color: #43b581; }
+        #undiscord progress.incomplete { accent-color: #f04747; }
+        #undiscord progress.pending { accent-color: #5865f2; }
+        /* also style the small progress inside the toolbar button */
+        #undicord-btn progress.complete { accent-color: #43b581; }
+        #undicord-btn progress.incomplete { accent-color: #f04747; }
+        #undicord-btn progress.pending { accent-color: #5865f2; }
         .logarea { scrollbar-width: none;}
         `);
 
@@ -496,26 +592,74 @@ function initUI() {
 
         const stopHndl = () => !(stop === true);
 
-        const onProg = (value, max) => {
+        let hasUndeletable = false;
+        const onProg = (value, max, markUndeletable = false) => {
+            if (markUndeletable) hasUndeletable = true;
             if (value && max && value > max) max = value;
             progress.setAttribute('max', max);
             progress.value = value;
-            progress.style.display = max ? '' : 'none';
+            // always keep the progress visible so the final red/green state can be seen
+            progress.style.display = '';
             progress2.setAttribute('max', max);
             progress2.value = value;
-            progress2.style.display = max ? '' : 'none';
-            percent.innerHTML = value && max ? Math.round(value / max * 100) + '%' : '';
+            progress2.style.display = '';
+            // show percentage even when value is 0 (0 is falsy), but only when both numbers are provided
+            if (typeof value === 'number' && typeof max === 'number' && max > 0) {
+                percent.innerHTML = Math.round(value / max * 100) + '%';
+            }
+
+            // blue by default, red if any undeletable was seen, green only when fully complete with no undeletables
+            if (hasUndeletable) {
+                progress.style.accentColor = '#f04747';  // red
+                progress2.style.accentColor = '#f04747';
+            } else if (max && value >= max) {
+                // all deleted - show green
+                progress.style.accentColor = '#43b581';  // green
+                progress2.style.accentColor = '#43b581';
+            } else if (max) {
+                // pending/in-progress with no undeletables
+                progress.style.accentColor = '#5865f2';  // blue
+                progress2.style.accentColor = '#5865f2';
+            } else {
+                // reset to default
+                progress.style.accentColor = '';
+                progress2.style.accentColor = '';
+            }
         };
 
 
         stop = stopBtn.disabled = !(startBtn.disabled = true);
+        // pre-reset progress bar so it starts blue immediately
+        progress.setAttribute('max', 1);
+        progress.value = 0;
+        progress.style.accentColor = '#5865f2';
+        progress2.setAttribute('max', 1);
+        progress2.value = 0;
+        progress2.style.accentColor = '#5865f2';
+        percent.innerHTML = '0%';
         for (let i = 0; i < channelIds.length; i++) {
             await deleteMessages(authToken, authorId, guildId, channelIds[i], minId || minDate, maxId || maxDate, content, hasLink, hasFile, includeNsfw, includePinned, logger, stopHndl, onProg);
             stop = stopBtn.disabled = !(startBtn.disabled = false);
         }
     };
     stopBtn.onclick = e => stop = stopBtn.disabled = !(startBtn.disabled = false);
-    $('button#clear').onclick = e => { logArea.innerHTML = ''; };
+    $('button#clear').onclick = e => {
+        logArea.innerHTML = '';
+
+        const progress = $('#progress');
+        const progress2 = btn.querySelector('progress');
+        const percent = $('.percent');
+
+        progress.style.display = 'none';
+        progress2.style.display = 'none';
+        progress.removeAttribute('max');
+        progress2.removeAttribute('max');
+        progress.value = 0;
+        progress2.value = 0;
+        progress.style.accentColor = '';
+        progress2.style.accentColor = '';
+        percent.textContent = '';
+    };
     $('button#getToken').onclick = e => {
         //window.dispatchEvent(new Event('beforeunload'));
         //const ls = document.body.appendChild(document.createElement('iframe')).contentWindow.localStorage;
