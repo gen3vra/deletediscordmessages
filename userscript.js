@@ -182,7 +182,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
 
             if (++iterations < 1) {
                 log.verb(`Waiting for your confirmation...`);
-                const previewMessages = [...messagesToDelete].reverse();
+                const previewMessages = messagesToDelete; // [...messagesToDelete].reverse(); (use if you want the preview to match discords ui)
                 if (!await ask(`Do you want to delete ~${total} messages?\nEstimated time: ${etr}\n\n---- Preview ----\n` +
                     previewMessages.map(m => `${m.author.username}#${m.author.discriminator}: ${m.attachments.length ? '[ATTACHMENTS]' : m.content}`).join('\n')))
                     return end(log.error('Aborted by you!'));
