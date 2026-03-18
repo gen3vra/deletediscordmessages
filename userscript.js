@@ -26,18 +26,14 @@
  */
 async function deleteMessages(authToken, authorId, guildId, channelId, minId, maxId, content, hasLink, hasFile, includeNsfw, includePinned, extLogger, stopHndl, onProgress) {
     const start = new Date();
-    // keep track of channels (threads) that have been archived so we stop
-    // attempting further deletes against them; the search API may still
-    // return hits for messages in an archived thread, but every delete will
-    // fail and we risk infinite retry loops or excessive rate-limiting.
     const ArchivedThreads = new Set();
     let deleteDefault = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
     let deleteDelay = deleteDefault;
     let randomizeDelay = true;
     let searchDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
     let delCount = 0;
-    let skipCount = 0;            // messages we could not delete (system/archive)
-    let archivedSkipCount = 0;    // subset of skipCount belonging to archived threads
+    let skipCount = 0;
+    let archivedSkipCount = 0;
     let failCount = 0;
     let avgPing;
     let lastPing;
@@ -47,7 +43,6 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
     let offset = 0;
     let iterations = -1;
     let ended = false;
-
     let failInRow = 0;
     let successInRow = 0;
 
@@ -137,11 +132,11 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
         const total = data.total_results;
         if (!grandTotal) grandTotal = total;
         const discoveredMessages = data.messages.map(convo => convo.find(message => message.hit === true));
-        // Filter out system messages and optionally pinned ones
+        // filter out system messages and optionally pinned ones
         let messagesToDelete = discoveredMessages.filter(msg => {
             return msg.type === 0 || msg.type === 6 || (msg.pinned && includePinned);
         });
-        // remove any messages belonging to threads we've already marked archived
+        // skip message if in archived thread
         messagesToDelete = messagesToDelete.filter(msg => {
             if (ArchivedThreads.has(msg.channel_id)) {
                 log.verb(`Skipping message in archived thread ${msg.channel_id}`);
@@ -171,9 +166,6 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
             // archivedSkipCount retained for diagnostics, but not shown to user
             log.debug(`Deleted ${delCount} messages, ${failCount} failed, ${computedSkip} skipped.\n`);
             // update UI to show final deleted count vs deletable messages
-            // do not update UI here; the last onProgress from the loop already
-            // reflected the most recent state. calling onProgress at end caused
-            // spurious resets (blue/full) when the run ended incomplete.
             ended = true;
         }
 
@@ -185,7 +177,6 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
             `offset: ${offset}`);
         printDelayStats();
         log.verb(`Estimated time remaining: ${etr}`)
-
 
         if (messagesToDelete.length > 0) {
 
@@ -200,7 +191,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
 
             for (let i = 0; i < messagesToDelete.length; i++) {
                 const message = messagesToDelete[i];
-                // if we've already marked this thread as archived, skip
+                // if already marked, skip
                 if (ArchivedThreads.has(message.channel_id)) {
                     log.verb(`Skipping message in archived thread ${message.channel_id}`);
                     continue;
@@ -212,9 +203,6 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 //log.debug(`${((delCount + 1) / grandTotal * 100).toFixed(2)}% (${delCount + 1}/${grandTotal})` + `Delete ID:${redact(message.id)} <b>${redact(message.author.username + '#' + message.author.discriminator)} <small>(${redact(new Date(message.timestamp).toLocaleString())})</small>:</b> <i>${redact(message.content).replace(/\n/g, '↵')}</i>`, message.attachments.length ? redact(JSON.stringify(message.attachments)) : '');
                 const processed = delCount + skipCount;
                 log.debug(`${((processed + 1) / grandTotal * 100).toFixed(2)}% (${processed + 1}/${grandTotal})` + ` | <b>DEL</b> <small>(${redact(new Date(message.timestamp).toLocaleDateString() + " - " + new Date(message.timestamp).toLocaleTimeString())})</small>: ${redact(message.content).replace(/\n/g, '↵')}`, message.attachments.length ? redact(JSON.stringify(message.attachments)) : '');
-
-
-                // progress reflects actual deleted messages (and adjusts when archived threads are detected)
 
                 let resp;
                 try {
@@ -241,15 +229,12 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     successInRow = 0;
                     randomizeDelay = false;
 
-                    // thread archived – API can return a few different codes or
-                    // messages depending on context.
+                    // Thread Archived or Can't be opened due to missing permissions or rate limits (note: Program can't discern between the two)
                     if ((resp.status === 400 && err?.code === 50083) ||
                         (resp.status === 403 && err?.message && /archiv/i.test(err.message)) ||
                         (resp.status === 404 && err?.message && /archiv/i.test(err.message))) {
                         log.warn(`Archived thread detected (status ${resp.status}${err?.code ? ', code ' + err.code : ''}), marking channel ${message.channel_id} as archived`);
                         ArchivedThreads.add(message.channel_id);
-                        // accounting/offset for this message is handled in the page-level
-                        // skippedMessages block to avoid double counting.
                         continue;
                     }
 
@@ -278,7 +263,8 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                         await wait(deleteDelay);
                         i--; // retry
                     }
-                    else {
+                    //nonspecific error handler
+                    else { 
                         log.error(`Error deleting message, API responded with status ${resp.status}!`, err);
                         log.verb('Related object:', redact(JSON.stringify(message)));
                         failCount++;
@@ -309,7 +295,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 }
 
 
-                // avoid an unnecessary delay after processing the last message
+                //skip unnecessary last message delay
                 if (i < messagesToDelete.length - 1) {
                     await wait(deleteDelay);
                 }
@@ -321,6 +307,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 log.verb(`Found ${skippedMessages.length} system messages! Increasing offset to ${offset}.`);
             }
 
+            // skip unnecessary search query
             // All results are already accounted for (deleted/failed/skipped),
             // no need to issue another search request.
             if ((delCount + failCount + skipCount) >= grandTotal) {
@@ -328,7 +315,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
             }
 
             log.verb(`Searching next messages in ${searchDelay}ms...`, (offset ? `(offset: ${offset})` : ''));
-            // rs
+
             deleteDefault = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
             deleteDelay = deleteDefault;
             searchDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
@@ -346,7 +333,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
             if (skippedMessages.length > 0) {
                 const archivedCount = skippedMessages.filter(msg => ArchivedThreads.has(msg.channel_id)).length;
                 const systemCount = skippedMessages.length - archivedCount;
-                log.verb(`No deletable messages on this page (${systemCount} system, ${archivedCount} archived). Advancing offset by ${skippedMessages.length}.`);
+                log.verb(`No deletables on this page (${systemCount} system, ${archivedCount} archived). Advancing offset by ${skippedMessages.length}.`);
                 offset += skippedMessages.length;
                 if ((delCount + failCount + skipCount) >= grandTotal) {
                     return end();
@@ -375,7 +362,6 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
     log.success(`\nStarted at ${start.toLocaleString()}`);
     log.debug(`authorId="${redact(authorId)}" guildId="${redact(guildId)}" channelId="${redact(channelId)}" minId="${redact(minId)}" maxId="${redact(maxId)}" hasLink=${!!hasLink} hasFile=${!!hasFile}`);
     ended = false;
-    // initialize progress at 0 so percent shows and color is blue immediately
     try { if (onProgress) onProgress(0, 1); } catch (e) { }
     return await recurse();
 }
