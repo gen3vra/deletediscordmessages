@@ -32,7 +32,6 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
     let randomizeDelay = true;
     let searchDelay = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
     let delCount = 0;
-    let skipCount = 0;
     let archivedSkipCount = 0;
     let failCount = 0;
     let avgPing;
@@ -43,8 +42,8 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
     let offset = 0;
     let iterations = -1;
     let ended = false;
-    let failInRow = 0;
-    let successInRow = 0;
+    // let failInRow = 0; this isn't used for anything, gimmick
+    let successInRow = 0; // this is used for delay recovery
 
     const wait = async ms => new Promise(done => setTimeout(done, ms));
     const msToHMS = s => `${s / 3.6e6 | 0}h ${(s % 3.6e6) / 6e4 | 0}m ${(s % 6e4) / 1000 | 0}s`;
@@ -99,7 +98,9 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
             return log.error('Search request threw an error:', err);
         }
 
-        // not indexed yet
+        // not indexed yet 
+        // (In testing this seems to literally never trigger,
+        //  why is this here?)
         if (resp.status === 202) {
             const w = (await resp.json()).retry_after;
             throttledCount++;
@@ -145,8 +146,8 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
             return true;
         });
         const skippedMessages = discoveredMessages.filter(msg => !messagesToDelete.find(m => m.id === msg.id));
-        // update global counters
-        skipCount += skippedMessages.length;
+        // count skipped messages as not deleted
+        failCount += skippedMessages.length;
         const archivedCount = skippedMessages.filter(msg => ArchivedThreads.has(msg.channel_id)).length;
         const systemCount = skippedMessages.length - archivedCount;
         archivedSkipCount += archivedCount;
@@ -162,14 +163,11 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
             // unnecessary
             // printDelayStats();
             log.verb(`Rate Limited: ${throttledCount} times. Total time throttled: ${msToHMS(throttledTotalTime)}.`);
-            const computedSkip = grandTotal - delCount - failCount;
-            // archivedSkipCount retained for diagnostics, but not shown to user
-            log.debug(`Deleted ${delCount} messages, ${failCount} failed, ${computedSkip} skipped.\n`);
-            // update UI to show final deleted count vs deletable messages
+            log.debug(`Deleted ${delCount} messages, ${failCount} failed.\n`);
             ended = true;
         }
 
-        const isRunComplete = () => (delCount + failCount + skipCount) >= grandTotal;
+        const isRunComplete = () => (delCount + failCount) >= grandTotal;
 
         const deletableMessages = grandTotal - archivedSkipCount;
         const etr = msToHMS((searchDelay * Math.round(deletableMessages / 25)) + ((deleteDelay + avgPing) * deletableMessages));
@@ -203,7 +201,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 // Too big to read, too much information to be useful to end user
                 // if you care about individual IDs being deleted or your username, there ya go:
                 //log.debug(`${((delCount + 1) / grandTotal * 100).toFixed(2)}% (${delCount + 1}/${grandTotal})` + `Delete ID:${redact(message.id)} <b>${redact(message.author.username + '#' + message.author.discriminator)} <small>(${redact(new Date(message.timestamp).toLocaleString())})</small>:</b> <i>${redact(message.content).replace(/\n/g, '↵')}</i>`, message.attachments.length ? redact(JSON.stringify(message.attachments)) : '');
-                const processed = delCount + skipCount;
+                const processed = delCount + failCount;
                 log.debug(`${((processed + 1) / grandTotal * 100).toFixed(2)}% (${processed + 1}/${grandTotal})` + ` | <b>DEL</b> <small>(${redact(new Date(message.timestamp).toLocaleDateString() + " - " + new Date(message.timestamp).toLocaleTimeString())})</small>: ${redact(message.content).replace(/\n/g, '↵')}`, message.attachments.length ? redact(JSON.stringify(message.attachments)) : '');
 
                 let resp;
@@ -217,9 +215,13 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     lastPing = (Date.now() - s);
                     avgPing = (avgPing * 0.9) + (lastPing * 0.1);
                 } catch (err) {
-                    log.error('Delete request throwed an error:', err);
-                    log.verb('Related object:', redact(JSON.stringify(message)));
+                    log.error('Delete request throwed an error:', err); //this is way too long to be read in the console
+                    log.verb('Related object:', redact(JSON.stringify(message))); //this is way too long to be read in the console
                     failCount++;
+                    if (i < messagesToDelete.length - 1) {
+                        await wait(deleteDelay);
+                    }
+                    continue;
                 }
 
                 if (!resp.ok) {
@@ -227,7 +229,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     let err;
                     try { err = await resp.json(); } catch { err = null; }
 
-                    failInRow++;
+                    //  failInRow++;
                     successInRow = 0;
                     randomizeDelay = false;
 
@@ -274,7 +276,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 }
                 else {
                     // success
-                    failInRow = 0;
+                    // failInRow = 0;
                     successInRow++;
                     delCount++;
                     // update progress after a successful delete
