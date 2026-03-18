@@ -2,7 +2,7 @@
 // @name          Discord Mass Deleter
 // @description   Extends the discord interface so you can mass delete messages from discord. Improved all aspects such as timing, backoffs, bugs, etc. Original created by victornpb.
 // @namespace     https://github.com/gen3vra/deletediscordmessages
-// @version       1.3.0
+// @version       1.4
 // @match         https://discord.com/*
 // @grant         none
 // @license       MIT
@@ -372,7 +372,7 @@ let popover;
 let btn;
 let stop;
 let logArea;
-let version = "1.2.1";
+let version = "1.4";
 
 function initUI() {
 
@@ -543,28 +543,6 @@ function initUI() {
     const startBtn = $('button#start');
     const stopBtn = $('button#stop');
     const autoScroll = $('#autoScroll');
-
-    function resetProgressUI(progress, progress2, percent) {
-        progress.style.display = 'none';
-        progress2.style.display = 'none';
-        progress.removeAttribute('max');
-        progress2.removeAttribute('max');
-        progress.value = 0;
-        progress2.value = 0;
-        progress.style.accentColor = '';
-        progress2.style.accentColor = '';
-        percent.textContent = '';
-    }
-
-    function initializeProgressUI(progress, progress2, percent) {
-        progress.setAttribute('max', 1);
-        progress.value = 0;
-        progress.style.accentColor = '#5865f2';
-        progress2.setAttribute('max', 1);
-        progress2.value = 0;
-        progress2.style.accentColor = '#5865f2';
-        percent.innerHTML = '0%';
-    }
 
     startBtn.onclick = async e => {
         const authToken = $('input#authToken').value.trim();
