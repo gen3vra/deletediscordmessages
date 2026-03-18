@@ -169,6 +169,8 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
             ended = true;
         }
 
+        const isRunComplete = () => (delCount + failCount + skipCount) >= grandTotal;
+
         const deletableMessages = grandTotal - archivedSkipCount;
         const etr = msToHMS((searchDelay * Math.round(deletableMessages / 25)) + ((deleteDelay + avgPing) * deletableMessages));
         // systemCount already computed above when updating counters
@@ -308,9 +310,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
             }
 
             // skip unnecessary search query
-            // All results are already accounted for (deleted/failed/skipped),
-            // no need to issue another search request.
-            if ((delCount + failCount + skipCount) >= grandTotal) {
+            if (isRunComplete()) {
                 return end();
             }
 
@@ -335,7 +335,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 const systemCount = skippedMessages.length - archivedCount;
                 log.verb(`No deletables on this page (${systemCount} system, ${archivedCount} archived). Advancing offset by ${skippedMessages.length}.`);
                 offset += skippedMessages.length;
-                if ((delCount + failCount + skipCount) >= grandTotal) {
+                if (isRunComplete()) {
                     return end();
                 }
                 if (offset >= total) {
@@ -543,6 +543,28 @@ function initUI() {
     const startBtn = $('button#start');
     const stopBtn = $('button#stop');
     const autoScroll = $('#autoScroll');
+
+    function resetProgressUI(progress, progress2, percent) {
+        progress.style.display = 'none';
+        progress2.style.display = 'none';
+        progress.removeAttribute('max');
+        progress2.removeAttribute('max');
+        progress.value = 0;
+        progress2.value = 0;
+        progress.style.accentColor = '';
+        progress2.style.accentColor = '';
+        percent.textContent = '';
+    }
+
+    function initializeProgressUI(progress, progress2, percent) {
+        progress.setAttribute('max', 1);
+        progress.value = 0;
+        progress.style.accentColor = '#5865f2';
+        progress2.setAttribute('max', 1);
+        progress2.value = 0;
+        progress2.style.accentColor = '#5865f2';
+        percent.innerHTML = '0%';
+    }
 
     startBtn.onclick = async e => {
         const authToken = $('input#authToken').value.trim();
