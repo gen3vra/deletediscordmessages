@@ -42,12 +42,12 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
     let offset = 0;
     let iterations = -1;
     let ended = false;
-    // let failInRow = 0; this isn't used for anything, gimmick
-    let successInRow = 0; // this is used for delay recovery
+    let failInRow = 0;
+    let successInRow = 0;
 
     const wait = async ms => new Promise(done => setTimeout(done, ms));
     const msToHMS = s => `${s / 3.6e6 | 0}h ${(s % 3.6e6) / 6e4 | 0}m ${(s % 6e4) / 1000 | 0}s`;
-    const escapeHTML = html => html.replace(/[&<"']/g, m => ({ '&': '&amp;', '<': '&lt;', '"': '&quot;', '\'': '&#039;' })[m]);
+    const escapeHTML = html => html.replace(/[&<"']/g, m => ({'&': '&amp;', '<': '&lt;', '"': '&quot;', '\'': '&#039;'})[m]);
     const redact = str => `<span class="priv">${escapeHTML(str)}</span><span class="mask">REDACTED</span>`;
     const queryString = params => params.filter(p => p[1] !== undefined).map(p => p[0] + '=' + encodeURIComponent(p[1])).join('&');
     const ask = async msg => new Promise(resolve => setTimeout(() => resolve(window.confirm(msg)), 10));
@@ -55,12 +55,12 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
     const toSnowflake = (date) => /:/.test(date) ? ((new Date(date).getTime() - 1420070400000) * Math.pow(2, 22)) : date;
 
     const log = {
-        debug() { extLogger ? extLogger('debug', arguments) : console.debug.apply(console, arguments); },
-        info() { extLogger ? extLogger('info', arguments) : console.info.apply(console, arguments); },
-        verb() { extLogger ? extLogger('verb', arguments) : console.log.apply(console, arguments); },
-        warn() { extLogger ? extLogger('warn', arguments) : console.warn.apply(console, arguments); },
-        error() { extLogger ? extLogger('error', arguments) : console.error.apply(console, arguments); },
-        success() { extLogger ? extLogger('success', arguments) : console.info.apply(console, arguments); },
+        debug() {extLogger ? extLogger('debug', arguments) : console.debug.apply(console, arguments);},
+        info() {extLogger ? extLogger('info', arguments) : console.info.apply(console, arguments);},
+        verb() {extLogger ? extLogger('verb', arguments) : console.log.apply(console, arguments);},
+        warn() {extLogger ? extLogger('warn', arguments) : console.warn.apply(console, arguments);},
+        error() {extLogger ? extLogger('error', arguments) : console.error.apply(console, arguments);},
+        success() {extLogger ? extLogger('success', arguments) : console.info.apply(console, arguments);},
     };
 
     async function recurse() {
@@ -91,16 +91,14 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 ['has', hasFile ? 'file' : undefined],
                 ['content', content || undefined],
                 ['include_nsfw', includeNsfw ? true : undefined],
-            ]), { headers });
+            ]), {headers});
             lastPing = (Date.now() - s);
             avgPing = avgPing > 0 ? (avgPing * 0.9) + (lastPing * 0.1) : lastPing;
         } catch (err) {
             return log.error('Search request threw an error:', err);
         }
 
-        // not indexed yet 
-        // (In testing this seems to literally never trigger,
-        //  why is this here?)
+        // Not indexed yet
         if (resp.status === 202) {
             const w = (await resp.json()).retry_after;
             throttledCount++;
@@ -111,7 +109,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
         }
 
         if (!resp.ok) {
-            // searching messages too fast
+            // Searching messages too fast
             if (resp.status === 429) {
                 const w = (await resp.json()).retry_after;
                 throttledCount++;
@@ -153,7 +151,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
         archivedSkipCount += archivedCount;
         // signal progress UI that undeletable messages were found
         if (skippedMessages.length > 0) {
-            try { if (onProgress) onProgress(delCount, grandTotal || 1, true); } catch (e) { }
+            try {if (onProgress) onProgress(delCount, grandTotal || 1, true);} catch (e) { }
         }
 
         const end = () => {
@@ -215,8 +213,8 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     lastPing = (Date.now() - s);
                     avgPing = (avgPing * 0.9) + (lastPing * 0.1);
                 } catch (err) {
-                    log.error('Delete request throwed an error:', err); //this is way too long to be read in the console
-                    log.verb('Related object:', redact(JSON.stringify(message))); //this is way too long to be read in the console
+                    log.error('Delete request throwed an error:', err); // Too long to be read in the console
+                    log.verb('Related object:', redact(JSON.stringify(message))); // Too long to be read in the console
                     failCount++;
                     if (i < messagesToDelete.length - 1) {
                         await wait(deleteDelay);
@@ -227,13 +225,13 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 if (!resp.ok) {
                     // failed
                     let err;
-                    try { err = await resp.json(); } catch { err = null; }
+                    try {err = await resp.json();} catch {err = null;}
 
-                    //  failInRow++;
+                    failInRow++;
                     successInRow = 0;
                     randomizeDelay = false;
 
-                    // Thread Archived or Can't be opened due to missing permissions or rate limits (note: Program can't discern between the two)
+                    // Thread archived or can't be opened due to missing permissions or rate limits (Program can't discern between the two)
                     if ((resp.status === 400 && err?.code === 50083) ||
                         (resp.status === 403 && err?.message && /archiv/i.test(err.message)) ||
                         (resp.status === 404 && err?.message && /archiv/i.test(err.message))) {
@@ -268,7 +266,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                         i--; // retry
                     }
                     //nonspecific error handler
-                    else { 
+                    else {
                         log.error(`Error deleting message, API responded with status ${resp.status}!`, err);
                         log.verb('Related object:', redact(JSON.stringify(message)));
                         failCount++;
@@ -276,11 +274,11 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 }
                 else {
                     // success
-                    // failInRow = 0;
+                    failInRow = 0;
                     successInRow++;
                     delCount++;
                     // update progress after a successful delete
-                    try { if (onProgress) onProgress(delCount, grandTotal || 1); } catch (e) { }
+                    try {if (onProgress) onProgress(delCount, grandTotal || 1);} catch (e) { }
                     if (randomizeDelay) {
                         deleteDefault = Math.floor(Math.random() * (2000 - 1000 + 1) + 1000);
                         deleteDelay = deleteDefault;
@@ -298,8 +296,6 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                     }
                 }
 
-
-                //skip unnecessary last message delay
                 if (i < messagesToDelete.length - 1) {
                     await wait(deleteDelay);
                 }
@@ -311,7 +307,6 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
                 log.verb(`Found ${skippedMessages.length} system messages! Increasing offset to ${offset}.`);
             }
 
-            // skip unnecessary search query
             if (isRunComplete()) {
                 return end();
             }
@@ -331,7 +326,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
 
             return await recurse();
         } else {
-            // nothing on this page could be deleted (either system or archived)
+            // Nothing on this page could be deleted (either system or archived)
             if (skippedMessages.length > 0) {
                 const archivedCount = skippedMessages.filter(msg => ArchivedThreads.has(msg.channel_id)).length;
                 const systemCount = skippedMessages.length - archivedCount;
@@ -364,7 +359,7 @@ async function deleteMessages(authToken, authorId, guildId, channelId, minId, ma
     log.success(`\nStarted at ${start.toLocaleString()}`);
     log.debug(`authorId="${redact(authorId)}" guildId="${redact(guildId)}" channelId="${redact(channelId)}" minId="${redact(minId)}" maxId="${redact(maxId)}" hasLink=${!!hasLink} hasFile=${!!hasFile}`);
     ended = false;
-    try { if (onProgress) onProgress(0, 1); } catch (e) { }
+    try {if (onProgress) onProgress(0, 1);} catch (e) { }
     return await recurse();
 }
 
@@ -536,7 +531,7 @@ function initUI() {
     const observer = new MutationObserver(function (_mutationsList, _observer) {
         if (!document.body.contains(btn)) mountBtn(); // re-mount the button to the toolbar
     });
-    observer.observe(document.body, { attributes: false, childList: true, subtree: true });
+    observer.observe(document.body, {attributes: false, childList: true, subtree: true});
 
     mountBtn();
 
@@ -692,7 +687,7 @@ function initUI() {
     };
 
     const logger = (type = '', args) => {
-        const style = { '': '', info: 'color:#00b0f4;', verb: 'color:#72767d;', warn: 'color:#faa61a;', error: 'color:#f04747;', success: 'color:#43b581;' }[type];
+        const style = {'': '', info: 'color:#00b0f4;', verb: 'color:#72767d;', warn: 'color:#faa61a;', error: 'color:#f04747;', success: 'color:#43b581;'}[type];
         logArea.insertAdjacentHTML('beforeend', `<div style="${style}">${Array.from(args).map(o => typeof o === 'object' ? JSON.stringify(o, o instanceof Error && Object.getOwnPropertyNames(o)) : o).join('\t')}</div>`);
         if (autoScroll.checked) logArea.querySelector('div:last-child').scrollIntoView(false);
     };
