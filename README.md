@@ -13,4 +13,5 @@ Click the trash can on your preferred channel and then click start. If you want 
 - Added offset code to handle 'system' messages including calls and notices properly
 - Fixed bug where attempting to resume deleting a previously started channel would error
 - Added automatic value grabbing of user values for faster user experience upon window open (you can still manually get any channel)
+- Added a Reactions tab that scans a channel's history and removes your reactions
 - And more that I forgot since this was a couple years ago
