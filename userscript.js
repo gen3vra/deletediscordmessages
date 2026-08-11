@@ -854,8 +854,7 @@ function initUI() {
                 <button id="stop" style="background:#f04747;" disabled>Stop</button>
                 <button id="clear" class="secondary">Clear log</button>
                 <label><input id="autoScroll" type="checkbox" checked>Auto scroll</label>
-                <label title="Hide sensitive information for taking screenshots"><input id="redact" type="checkbox">Screenshot
-                    mode</label>
+                <label title="Hide sensitive information for taking screenshots"><input id="redact" type="checkbox">Privacy mode</label>
                 <progress id="progress" style="display:none;"></progress> <span class="percent"></span>
             </div>
         </div>
